@@ -128,7 +128,6 @@ def get_data_panel(path, computstat_data_present_filter=True, start_date=None):
     char_data[:, :, :] = np.nan
     returns = np.zeros((len(date_vals), permnos.shape[0]))
     returns[:, :] = np.nan
-    quarterly_updates = np.zeros((len(date_vals), permnos.shape[0]))
 
     permno_map = np.zeros(int(max(permnos)) + 1, dtype=int)
     for i, permno in enumerate(permnos):
@@ -140,7 +139,6 @@ def get_data_panel(path, computstat_data_present_filter=True, start_date=None):
         permno_inds_for_date = permno_map[date_permnos]
         char_data[i, permno_inds_for_date, :] = date_data[chars].to_numpy()
         returns[i, permno_inds_for_date] = date_data['return'].to_numpy()
-        quarterly_updates[i, permno_inds_for_date] = date_data["monthly_update"].to_numpy()
 
     percentile_rank_chars = percentile_rank_panel(char_data) - 0.5
     
@@ -153,9 +151,8 @@ def get_data_panel(path, computstat_data_present_filter=True, start_date=None):
         char_data = char_data[:,permno_filter,:]
         permnos = permnos[permno_filter]
         returns = returns[:,permno_filter]
-        quarterly_updates = quarterly_updates[:,permno_filter]
     
-    return percentile_rank_chars, char_data, chars, date_vals, returns, permnos, quarterly_updates
+    return percentile_rank_chars, char_data, chars, date_vals, returns, permnos
 
 CHAR_GROUPINGS  = [('A2ME', "Q"),
                    ('AC', 'Q'),
