@@ -360,18 +360,31 @@ def xs_industry_median_impute(char_panel, industry_codes):
     return imputed_panel
 
 
-def impute_chars(gamma_ts, char_data, suff_stat_method,
+def impute_chars(imputation_method, gamma_ts, char_data,
                           num_months_train=None, window_size=None):
     """
     given XS-factors (gamma) run the time series + XS info regression outlined in the paper
     Parameters
     ----------
+        imputation_method: one of 'XS', 'BW-XS', 'BW', 'FW-XS', 'FWBW-XS'
         gamma_ts: XS factors, can be None to run with only tim series info
         char_data: characteristcs
-        suff_stat_method: one of ['last_val', 'next_val', 'fwbw', 'None']
         num_months_train=None: if beta is fixed, number of months over which to fit beta
         window_size: if not none, then the window size over which to fit time varying betas
     """
+    if 'XS' in imputation_method:
+        assert gamma_ts is not None, "needs xs factors to run any kind of xs imputation"
+    
+    if imputation_method == 'XS':
+        suff_stat_method = 'None'
+    elif imputation_method == 'BW-XS':
+        suff_stat_method = 'last_val'
+    elif imputation_method == 'FW-XS':
+        suff_stat_method = 'next_val'
+    elif imputation_method == 'BW':
+        suff_stat_method = 'last_val'
+    elif imputation_method == 'FWBW-XS':
+        suff_stat_method = 'fwbw'
     
     if suff_stat_method == 'last_val':
         suff_stats, _ = get_sufficient_statistics_last_val(char_data, max_delta=None)
