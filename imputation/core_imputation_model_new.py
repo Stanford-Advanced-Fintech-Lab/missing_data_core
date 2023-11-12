@@ -10,7 +10,7 @@ from numpy.linalg import LinAlgError
 ############### Core Factor Imputation Model ####################
 
 
-def get_optimal_A(B, A, present, cl, idxs=[], reg=0):
+def get_optimal_A(B, A, present, cl, L, idxs=[], reg=0):
     """
     Get optimal A for cl = AB given that X is (potentially) missing data
     Parameters
@@ -32,17 +32,16 @@ def get_optimal_A(B, A, present, cl, idxs=[], reg=0):
         effective_reg = reg 
         lmbda = effective_reg * np.eye(Bi.shape[1])
         try:
-            A[i,:] = Bi @ np.linalg.lstsq(Bi.T @ Bi + lmbda, Xi, rcond=0)[0]
+            A[i,:] = Bi @ np.linalg.lstsq(Bi.T @ Bi / L + lmbda, Xi / L, rcond=0)[0]
         except LinAlgError as e:
             lmbda = np.eye(Bi.shape[1])
-            A[i,:] = Bi @ np.linalg.lstsq(Bi.T @ Bi + lmbda, Xi, rcond=0)[0]
+            A[i,:] = Bi @ np.linalg.lstsq(Bi.T @ Bi / L + lmbda, Xi / L, rcond=0)[0]
     return A
 
 
 def fit_factors_and_loadings(char_panel, min_chars, K, num_months_train,
                       reg=0.01,
                       time_varying_lambdas=False,
-                      n_iter=3,
                       eval_data=None,
                       run_in_parallel=True):
     """
@@ -55,7 +54,6 @@ def fit_factors_and_loadings(char_panel, min_chars, K, num_months_train,
         num_months_train : if fitting a global model, the number of months over which to fit the loadings
         reg=0.01 : the regularization strength
         time_varying_lambdas=False : whethere or not to allow the loadings to vary over time
-        n_iter=3 : the number of iterations to run of estimating the loadings and factors
         eval_data=None : Optional, can pass in an "eval" set for the data and print metrics
         run_in_parallel=True : Whether or not to use joblib to parallelize the factor estimation step
     """
@@ -71,58 +69,57 @@ def fit_factors_and_loadings(char_panel, min_chars, K, num_months_train,
     
     resid_cov_mats = [None for _ in range(T)]
     mu = np.zeros((T, L), dtype=float)
-    for i in range(n_iter):
-        lmbda, cov_mat = estimate_lambda(imputed_chars, num_months_train=num_months_train,
-                                K=K, min_chars=min_chars,
-                                        time_varying_lambdas=time_varying_lambdas)
+    lmbda, cov_mat = estimate_lambda(imputed_chars, num_months_train=num_months_train,
+                            K=K, min_chars=min_chars,
+                                    time_varying_lambdas=time_varying_lambdas)
 
-        assert np.sum(np.isnan(lmbda)) == 0, f"lambda should contain no nans, {np.argwhere(np.isnan(lmbda))}"
-        
-        gamma_ts = np.zeros((char_panel.shape[0], char_panel.shape[1], K))
-        gamma_ts[:,:] = np.nan        
-            
-        def get_gamma_t(ct, present, to_impute, lmbda, time_varying_lambdas, t):
+    assert np.sum(np.isnan(lmbda)) == 0, f"lambda should contain no nans, {np.argwhere(np.isnan(lmbda))}"
 
-            if time_varying_lambdas:
-                gamma_t = lmbda[t].T.dot(ct.T).T # gamma_t = ct @ lmbda[t]
-                gamma_t = get_optimal_A(lmbda[t].T, gamma_t, present, ct, 
-                                        idxs=to_impute, reg=reg)
-            else:
-                gamma_t = lmbda.T.dot(ct.T).T # gamma_t = ct @ lmbda
-                gamma_t = get_optimal_A(lmbda.T, gamma_t, present, ct, idxs=to_impute, reg=reg)
-            return gamma_t
-        
-        if run_in_parallel:
-            gammas = [x for x in Parallel(n_jobs=30, verbose=5)(delayed(get_gamma_t)(
-                ct = char_panel[t], 
-                present = ~np.isnan(char_panel[t]),
-                to_impute = np.argwhere(return_mask[t]).squeeze(),
-                lmbda=lmbda,
-                time_varying_lambdas=time_varying_lambdas, t=t,
-            ) for t in range(T))]
-        else:
-            gammas = [get_gamma_t(
-                ct = char_panel[t], 
-                present = ~np.isnan(char_panel[t]),
-                to_impute = np.argwhere(return_mask[t]).squeeze(),
-                lmbda=lmbda,
-                time_varying_lambdas=time_varying_lambdas, t=t,
-            ) for t in range(T)]
+    gamma_ts = np.zeros((char_panel.shape[0], char_panel.shape[1], K))
+    gamma_ts[:,:] = np.nan        
 
-        for t in tqdm(range(T)):
-            gamma_ts[t, return_mask[t]] = gammas[t][return_mask[t]]
-        
+    def get_gamma_t(ct, present, to_impute, lmbda, time_varying_lambdas, t):
+
         if time_varying_lambdas:
-            new_imputation = np.concatenate([np.expand_dims(x @ l.T, axis=0) for x,l in zip(gamma_ts, lmbda)], axis=0)
+            gamma_t = lmbda[t].T.dot(ct.T).T # gamma_t = ct @ lmbda[t]
+            gamma_t = get_optimal_A(lmbda[t].T, gamma_t, present, ct, L=L,
+                                    idxs=to_impute, reg=reg)
         else:
-            new_imputation = np.concatenate([np.expand_dims(x @ lmbda.T, axis=0) for x in gamma_ts], axis=0)
-            
-        resids = char_panel - new_imputation
-        print(f"at iteration {i} resids rmse are ", np.sqrt(np.nanmean(np.square(resids))))
-        if eval_data is not None:
-            print(f"at iteration {i} eval resids rmse are ", np.sqrt(np.nanmean(np.square(new_imputation - eval_data))))
-        
-        imputed_chars[missing_mask_overall] = new_imputation[missing_mask_overall]
+            gamma_t = lmbda.T.dot(ct.T).T # gamma_t = ct @ lmbda
+            gamma_t = get_optimal_A(lmbda.T, gamma_t, present, ct, L=L, idxs=to_impute, reg=reg)
+        return gamma_t
+
+    if run_in_parallel:
+        gammas = [x for x in Parallel(n_jobs=30, verbose=5)(delayed(get_gamma_t)(
+            ct = char_panel[t], 
+            present = ~np.isnan(char_panel[t]),
+            to_impute = np.argwhere(return_mask[t]).squeeze(),
+            lmbda=lmbda,
+            time_varying_lambdas=time_varying_lambdas, t=t,
+        ) for t in range(T))]
+    else:
+        gammas = [get_gamma_t(
+            ct = char_panel[t], 
+            present = ~np.isnan(char_panel[t]),
+            to_impute = np.argwhere(return_mask[t]).squeeze(),
+            lmbda=lmbda,
+            time_varying_lambdas=time_varying_lambdas, t=t,
+        ) for t in range(T)]
+
+    for t in tqdm(range(T)):
+        gamma_ts[t, return_mask[t]] = gammas[t][return_mask[t]]
+
+    if time_varying_lambdas:
+        new_imputation = np.concatenate([np.expand_dims(x @ l.T, axis=0) for x,l in zip(gamma_ts, lmbda)], axis=0)
+    else:
+        new_imputation = np.concatenate([np.expand_dims(x @ lmbda.T, axis=0) for x in gamma_ts], axis=0)
+
+    resids = char_panel - new_imputation
+    print(f"resids rmse are ", np.sqrt(np.nanmean(np.square(resids))))
+    if eval_data is not None:
+        print(f"eval resids rmse are ", np.sqrt(np.nanmean(np.square(new_imputation - eval_data))))
+
+    imputed_chars[missing_mask_overall] = new_imputation[missing_mask_overall]
         
             
     return gamma_ts, lmbda
@@ -415,8 +412,8 @@ def get_oos_estimates_given_loadings(chars, reg, Lmbda, time_varying_lmbda=False
 
 
 def run_imputation(characteristics, n_xs_factors=20, time_varying_loadings=False,
-                   xs_factor_reg=0.01, use_bw_ts_info=False, use_fw_ts_info=False,
-                   include_ts_residuals=True, min_xs_obs=1, xs_regr_n_iter=3):
+                   xs_factor_reg=0.01, use_bw_ts_info=False,
+                   include_ts_residuals=True, min_xs_obs=1):
     """
     run the imputation as described in the paper
     Parameters
@@ -426,10 +423,8 @@ def run_imputation(characteristics, n_xs_factors=20, time_varying_loadings=False
         time_varying_loadings=False: whether or not to allow time variation in the loadings of the model
         xs_factor_reg=0.01 : the regularization to apply in the factor estimation
         use_bw_ts_info=False : whether or not to use past time series information
-        use_fw_ts_info=False : whether or not to use future time series information
         include_ts_residuals=True : whether or not to include residuals from the XS model in the time series regression
         min_xs_obs=1 : the minimum number of observations a stock needs in a month to be included
-        xs_regr_n_iter=3 : the number of iterations to run during the factor estimation
         
     """
     T, N, L = characteristics.shape
@@ -441,7 +436,6 @@ def run_imputation(characteristics, n_xs_factors=20, time_varying_loadings=False
         num_months_train=T,
         reg=xs_factor_reg,
         time_varying_lambdas=time_varying_loadings,
-        n_iter=xs_regr_n_iter,
         eval_data=None,
         run_in_parallel=True
     )
@@ -459,25 +453,7 @@ def run_imputation(characteristics, n_xs_factors=20, time_varying_loadings=False
     
     residuals = characteristics - xs_imputations
     
-    if use_bw_ts_info and use_fw_ts_info:
-        global_fwbw = impute_chars(
-            characteristics, 
-            oos_xs_imputations, 
-            residuals if include_ts_residuals else None, 
-            suff_stat_method='fwbw', 
-            constant_beta=~time_varying_loadings
-        )
-        return global_fwbw
-    elif use_fw_ts_info:
-        global_fw = impute_chars(
-            characteristics, 
-            oos_xs_imputations,
-            residuals if include_ts_residuals else None, 
-            suff_stat_method='next_val', 
-            constant_beta=~time_varying_loadings
-        )
-        return global_fw
-    elif use_bw_ts_info:
+    if use_bw_ts_info:
         global_bw = impute_chars(
             characteristics,
             oos_xs_imputations, 
