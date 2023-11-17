@@ -8,16 +8,14 @@ import numpy as np
 def get_data_dataframe(data_panel, return_panel, char_names, dates, permnos, quarterly_updates, mask):
     T, N, C = data_panel.shape
     if mask is None:
-        nonnan_returns = np.argwhere(np.logical_or(~np.isnan(return_panel), np.any(~np.isnan(data_panel),
-                                                                                   axis=2)))
-        num_nonnan_returns = np.sum(np.logical_or(~np.isnan(return_panel), np.any(~np.isnan(data_panel),
-                                                                                   axis=2)))
+        nonnan_returns = np.argwhere(np.any(~np.isnan(data_panel), axis=2))
+        num_nonnan_returns = np.sum(np.any(~np.isnan(data_panel), axis=2))
     else:
         nonnan_returns = np.argwhere(mask)
         num_nonnan_returns = np.sum(mask)
     
     data_matrix = np.zeros((num_nonnan_returns, C+4))
-    columns = np.append(char_names, ["return", "date", "permno", "monthly_update"])
+    columns = np.append(char_names, ["date", "permno", "monthly_update"])
     for i in range(nonnan_returns.shape[0]):
         nonnan_return = nonnan_returns[i]
         data_matrix[i,:C] = data_panel[nonnan_return[0], nonnan_return[1], :]
@@ -54,8 +52,6 @@ def get_data_panel(path, computstat_data_present_filter=True, start_date=None):
 
     percentile_rank_chars = np.zeros((len(date_vals), permnos.shape[0], len(chars)))
     percentile_rank_chars[:, :, :] = np.nan
-    returns = np.zeros((len(date_vals), permnos.shape[0]))
-    returns[:, :] = np.nan
 
     permno_map = np.zeros(int(max(permnos)) + 1, dtype=int)
     for i, permno in enumerate(permnos):
@@ -66,16 +62,14 @@ def get_data_panel(path, computstat_data_present_filter=True, start_date=None):
         date_permnos = date_data['permno'].to_numpy().astype(int)
         permno_inds_for_date = permno_map[date_permnos]
         percentile_rank_chars[i, permno_inds_for_date, :] = date_data[chars].to_numpy()
-        returns[i, permno_inds_for_date] = date_data['return'].to_numpy()
     
     if computstat_data_present_filter:
         cstat_permnos = pd.read_csv("data/compustat_permnos.csv")["PERMNO"].to_numpy()
         permno_filter = np.isin(permnos, cstat_permnos)
         percentile_rank_chars = percentile_rank_chars[:,permno_filter,:]
         permnos = permnos[permno_filter]
-        returns = returns[:,permno_filter]
     
-    return percentile_rank_chars, chars, date_vals, returns, permnos
+    return percentile_rank_chars, chars, date_vals, permnos
 
 CHAR_GROUPINGS  = [('A2ME', "Q"),
                    ('AC', 'Q'),
