@@ -4,28 +4,6 @@ from tqdm.notebook import tqdm
 import pandas as pd
 import numpy as np
 
-def percentile_rank(x, UNK=np.nan):
-    mask = np.logical_not(np.isnan(x))
-    x_copy = np.copy(x)
-    x_mask = x_copy[mask]
-    n = len(x_mask)
-    if n > 1:
-        temp = [(i, x_mask[i]) for i in range(n)]
-        temp_sorted = sorted(temp, key=lambda t: t[1])
-        idx = sorted([(temp_sorted[i][0], i) for i in range(n)], key=lambda t: t[0])
-        x_copy[mask] = np.array([idx[i][1] for i in range(n)]) / (n - 1)
-    elif n == 1:
-        x_copy[mask] = 0.5
-    return x_copy
-
-def percentile_rank_panel(char_panel):
-    ret_panel = np.zeros(char_panel.shape)
-    ret_panel[:, :, :] = np.nan
-    for t in tqdm(range(char_panel.shape[0])):
-        for i in range(char_panel.shape[2]):
-            ret_panel[t, :, i] = percentile_rank(char_panel[t, :, i])
-        assert np.sum(np.isnan(ret_panel[t])) > 0, f'we have no returns for given date indexed {t}'
-    return ret_panel
 
 def get_data_dataframe(data_panel, return_panel, char_names, dates, permnos, quarterly_updates, mask):
     T, N, C = data_panel.shape
@@ -74,8 +52,8 @@ def get_data_panel(path, computstat_data_present_filter=True, start_date=None):
     chars = np.array(data.columns.tolist()[:-4])
     chars.sort()
 
-    char_data = np.zeros((len(date_vals), permnos.shape[0], len(chars)))
-    char_data[:, :, :] = np.nan
+    percentile_rank_chars = np.zeros((len(date_vals), permnos.shape[0], len(chars)))
+    percentile_rank_chars[:, :, :] = np.nan
     returns = np.zeros((len(date_vals), permnos.shape[0]))
     returns[:, :] = np.nan
 
@@ -87,22 +65,17 @@ def get_data_panel(path, computstat_data_present_filter=True, start_date=None):
         date_data = data.loc[data['date'] == date].sort_values(by='permno')
         date_permnos = date_data['permno'].to_numpy().astype(int)
         permno_inds_for_date = permno_map[date_permnos]
-        char_data[i, permno_inds_for_date, :] = date_data[chars].to_numpy()
+        percentile_rank_chars[i, permno_inds_for_date, :] = date_data[chars].to_numpy()
         returns[i, permno_inds_for_date] = date_data['return'].to_numpy()
-
-    percentile_rank_chars = percentile_rank_panel(char_data) - 0.5
-    
-    assert np.all(np.isnan(percentile_rank_chars) == np.isnan(char_data))
     
     if computstat_data_present_filter:
         cstat_permnos = pd.read_csv("data/compustat_permnos.csv")["PERMNO"].to_numpy()
         permno_filter = np.isin(permnos, cstat_permnos)
         percentile_rank_chars = percentile_rank_chars[:,permno_filter,:]
-        char_data = char_data[:,permno_filter,:]
         permnos = permnos[permno_filter]
         returns = returns[:,permno_filter]
     
-    return percentile_rank_chars, char_data, chars, date_vals, returns, permnos
+    return percentile_rank_chars, chars, date_vals, returns, permnos
 
 CHAR_GROUPINGS  = [('A2ME', "Q"),
                    ('AC', 'Q'),
