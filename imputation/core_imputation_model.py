@@ -458,7 +458,7 @@ def impute_data_xs(characteristics, n_xs_factors=20, time_varying_loadings=False
     return run_imputation(characteristics, n_xs_factors=n_xs_factors, 
                           time_varying_loadings=time_varying_loadings,
                    xs_factor_reg=xs_factor_reg, use_bw_ts_info=False,
-                   include_ts_residuals=True, min_xs_obs=min_xs_obs)
+                   include_ts_residuals=False, min_xs_obs=min_xs_obs)
 
 
 def impute_data_bxs(characteristics, n_xs_factors=20, time_varying_loadings=False,
