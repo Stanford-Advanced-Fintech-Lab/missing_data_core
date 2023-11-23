@@ -229,21 +229,6 @@ def get_sufficient_statistics_last_val(characteristics_panel, max_delta=None,
     return sufficient_statistics, deltas
 
 
-def get_sufficient_statistics_next_val(characteristics_panel, max_delta=None, residuals=None):
-    """
-    Get the next observed value for a panel time series 
-    Parameters
-    ----------
-        characteristics_panel : the time series panel, T x N x L
-        max_delta=None : Optional, the maximum lag which is allowed for a previously observed value
-        residuals=None : Optional, residuals T x N x L, the residuals the factor model applied to the time
-                        series panel
-    """
-    suff_stats, deltas = get_sufficient_statistics_last_val(characteristics_panel[::-1], max_delta=max_delta,
-                                      residuals=None if residuals is None else residuals[::-1])
-    return suff_stats[::-1], deltas[::-1]
-
-
 def impute_chars(char_data, imputed_chars, residuals=None, 
                  suff_stat_method='None', constant_beta=False):
     """
@@ -254,7 +239,7 @@ def impute_chars(char_data, imputed_chars, residuals=None,
         imputed_chars: the cross-sectional imputation of the time series panel
         residuals=None : Optional, residuals T x N x L, the residuals the factor model applied to the time
                         series panel
-        suff_stat_method=None : Optional, the type of information to add to the cross sectaial panel in the 
+        suff_stat_method=None : Optional, the type of information to add to the cross sectional panel in the 
                         imputation
         constant_beta=False: whether or not to allow time variation in the loadings of the model
     """
@@ -263,16 +248,6 @@ def impute_chars(char_data, imputed_chars, residuals=None,
                                                                            residuals=residuals)
         if len(suff_stats.shape) == 3:
             suff_stats = np.expand_dims(suff_stats, axis=3)
-        
-    elif suff_stat_method == 'next_val':
-        suff_stats, _ = get_sufficient_statistics_next_val(char_data, max_delta=None, residuals=residuals)
-        
-    elif suff_stat_method == 'fwbw':
-        next_val_suff_stats, fw_deltas = get_sufficient_statistics_next_val(char_data, max_delta=None,
-                                                                                            residuals=residuals)
-        prev_val_suff_stats, bw_deltas = get_sufficient_statistics_last_val(char_data, max_delta=None,
-                                                                                            residuals=residuals)
-        suff_stats = np.concatenate([prev_val_suff_stats, next_val_suff_stats], axis=3)
                 
     elif suff_stat_method == 'None':
         suff_stats = None
@@ -466,6 +441,43 @@ def run_imputation(characteristics, n_xs_factors=20, time_varying_loadings=False
     return oos_xs_imputations
 
 
-    
+def impute_data_xs(characteristics, n_xs_factors=20, time_varying_loadings=False,
+                   xs_factor_reg=0.01, use_bw_ts_info=False,
+                   include_ts_residuals=True, min_xs_obs=1):
+    """
+    run the cross-sectional imputation as described in the paper
+    Parameters
+    ----------
+        characteristics : the time series panel, T x N x L
+        n_xs_factors: the number of cross-sectional factors to use
+        time_varying_loadings=False: whether or not to allow time variation in the loadings of the model
+        xs_factor_reg=0.01 : the regularization to apply in the factor estimation
+        min_xs_obs=1 : the minimum number of observations a stock needs in a month to be included
+        
+    """
+    return run_imputation(characteristics, n_xs_factors=n_xs_factors, 
+                          time_varying_loadings=time_varying_loadings,
+                   xs_factor_reg=xs_factor_reg, use_bw_ts_info=False,
+                   include_ts_residuals=True, min_xs_obs=min_xs_obs)
+
+
+def impute_data_bxs(characteristics, n_xs_factors=20, time_varying_loadings=False,
+                   xs_factor_reg=0.01, use_bw_ts_info=False,
+                   include_ts_residuals=True, min_xs_obs=1):
+    """
+    run the imputation as described in the paper using backwards time series information
+    Parameters
+    ----------
+        characteristics : the time series panel, T x N x L
+        n_xs_factors: the number of cross-sectional factors to use
+        time_varying_loadings=False: whether or not to allow time variation in the loadings of the model
+        xs_factor_reg=0.01 : the regularization to apply in the factor estimation
+        min_xs_obs=1 : the minimum number of observations a stock needs in a month to be included
+        
+    """
+    return run_imputation(characteristics, n_xs_factors=n_xs_factors, 
+                          time_varying_loadings=time_varying_loadings,
+                   xs_factor_reg=xs_factor_reg, use_bw_ts_info=True,
+                   include_ts_residuals=True, min_xs_obs=min_xs_obs)
     
     
